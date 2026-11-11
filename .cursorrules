@@ -1,0 +1,15 @@
+Project: Hospital Shift and Bed Allocator (Advanced Algorithm CIA 3)
+
+Stack: Java 17, Spring Boot 3.3, Maven, JUnit 5. Frontend: plain JavaScript in src/main/resources/static.
+
+HARD RULES
+- The assessed algorithms are EdmondsKarp, RandomizedQuickselect and BloomFilter in com.hospital.allocator.algo.
+  They must stay self-implemented. Never replace them with library flow, selection or Bloom filter code
+  (no Guava BloomFilter, no JGraphT, no Collections.sort / Arrays.sort inside RandomizedQuickselect).
+- Arrays.sort / HashSet / greedy are allowed ONLY as baselines (BenchmarkService, RosterService.solveGreedy).
+- A Bloom filter hit means "possibly present". Always confirm with the exact HashSet before reporting a duplicate.
+- Java does all algorithm work on the server. The frontend must not recompute or precompute results.
+- Invalid input must produce a 400 with a clear message (IllegalArgumentException), never a silently wrong result.
+- Every algorithm needs at least 5 JUnit tests including one boundary case.
+- Keep controllers thin; logic lives in service/ and algo/.
+- Do not commit secrets. Use small, frequent commits from your own Git account.
