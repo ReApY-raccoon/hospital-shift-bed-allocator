@@ -1,0 +1,7 @@
+id,skill,maxShifts,availableShifts
+N1,GENERAL,1,S1;S2
+N2,GENERAL,1,S1
+N3,ICU,2,S2;S3
+N4,ER,2,S3;S4
+N5,GENERAL,3,S1;S3;S4
+N6,ICU,1,S4
