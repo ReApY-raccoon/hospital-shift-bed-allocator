@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hospital Shift and Bed Allocator</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f4f6f8;color:#1b2733}
+  header{background:#0b5d6b;color:#fff;padding:14px 24px}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  section{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px #0002}
+  h2{margin:0 0 8px;font-size:18px}
+  button{background:#0b5d6b;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;margin-right:6px}
+  button:hover{background:#094a56}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+  th,td{border-bottom:1px solid #e1e6ea;padding:5px 8px;text-align:left}
+  .err{color:#b00020;font-weight:600}.ok{color:#0a7a3d;font-weight:600}
+  .bar{height:10px;background:#0b5d6b;border-radius:3px}.bar.base{background:#c98a1a}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  small{color:#5a6b78}
+  textarea{width:100%;height:70px}
+</style>
+</head>
+<body>
+<header><h1 style="margin:0;font-size:20px">Hospital Shift and Bed Allocator</h1>
+<small style="color:#cfe8ec">Edmonds-Karp max-flow, Randomized Quickselect, Bloom filter. All algorithms run in the Java backend.</small></header>
+<main>
+
+<section>
+  <h2>1. Nurse roster (max-flow vs greedy baseline)</h2>
+  <button onclick="loadSample()">Load sample data</button>
+  Nurses: <input id="nCount" type="number" value="30" min="1" max="5000" style="width:70px">
+  <span> or upload CSVs: </span>
+  <input type="file" id="nurseFile" accept=".csv"> <input type="file" id="shiftFile" accept=".csv">
+  <button onclick="uploadCsv()">Run from CSV</button>
+  <button onclick="runRoster()">Run on loaded data</button>
+  <div id="rosterMsg"></div>
+  <div class="grid"><div id="flowOut"></div><div id="greedyOut"></div></div>
+</section>
+
+<section>
+  <h2>2. Wait-time statistics (Randomized Quickselect)</h2>
+  Percentile: <input id="pct" type="number" value="90" min="1" max="100" style="width:60px">
+  Top-k risk: <input id="topk" type="number" value="5" min="1" style="width:60px">
+  <button onclick="runStats()">Compute</button>
+  <div id="statsOut"></div>
+</section>
+
+<section>
+  <h2>3. Admission duplicate screening (Bloom filter + exact confirmation)</h2>
+  False-positive rate: <input id="fpr" type="number" value="0.01" step="0.01" style="width:70px">
+  <button onclick="runAdmissions()">Screen admissions</button>
+  <div id="admOut"></div>
+</section>
+
+<section>
+  <h2>4. Benchmarks (each algorithm vs its baseline, 3 sizes)</h2>
+  <button onclick="runBench()">Run benchmarks (takes a few seconds)</button>
+  <div id="benchOut"></div>
+</section>
+</main>
+
+<script>
+let data = null;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+const post = (p, body) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+const show = (id, html) => document.getElementById(id).innerHTML = html;
+const fail = (id, e) => show(id, '<p class="err">Error: ' + esc(e.message) + '</p>');
+
+async function loadSample() {
+  try {
+    data = await api('/api/sample?nurses=' + document.getElementById('nCount').value);
+    show('rosterMsg', '<p class="ok">Loaded ' + data.roster.nurses.length + ' nurses, ' + data.roster.shifts.length +
+      ' shifts, ' + data.patients.length + ' patients.</p>');
+    runRoster();
+  } catch (e) { fail('rosterMsg', e); }
+}
+
+function renderRoster(title, r) {
+  const rows = r.shifts.map(s => `<tr><td>${esc(s.shiftId)}</td><td>${s.assigned}/${s.required}</td>
+    <td><div class="bar" style="width:${s.required ? 100*s.assigned/s.required : 0}%"></div></td>
+    <td>${s.shortfall > 0 ? '<span class="err">short ' + s.shortfall + '</span>' : '<span class="ok">ok</span>'}</td></tr>`).join('');
+  const cut = r.minCutEdges.length ? '<small>Min-cut edges (bottleneck): ' + r.minCutEdges.slice(0, 8).map(esc).join('; ') +
+    (r.minCutEdges.length > 8 ? ' ...' : '') + '</small>' : '';
+  return `<h3 style="margin:8px 0 0">${esc(title)}</h3>
+    <p>${r.totalAssigned} of ${r.totalRequired} slots filled
+    ${r.feasible ? '<span class="ok">(feasible)</span>' : '<span class="err">(infeasible: ' + r.bottleneckShifts.length + ' shifts short)</span>'}
+    <br><small>${r.timeMs.toFixed(2)} ms${r.augmentations ? ', ' + r.augmentations + ' augmenting paths' : ''}</small></p>
+    <table><tr><th>Shift</th><th>Filled</th><th></th><th>Status</th></tr>${rows}</table>${cut}`;
+}
+
+async function runRoster() {
+  if (!data) return fail('rosterMsg', new Error('Load sample data or upload CSVs first'));
+  try {
+    const res = await post('/api/roster/compare', data.roster);
+    show('flowOut', renderRoster('Edmonds-Karp max-flow', res.maxflow));
+    show('greedyOut', renderRoster('Greedy baseline', res.greedy));
+  } catch (e) { fail('rosterMsg', e); }
+}
+
+async function uploadCsv() {
+  const n = document.getElementById('nurseFile').files[0], s = document.getElementById('shiftFile').files[0];
+  if (!n || !s) return fail('rosterMsg', new Error('Choose both nurses.csv and shifts.csv'));
+  const fd = new FormData(); fd.append('nurses', n); fd.append('shifts', s);
+  try {
+    const res = await api('/api/roster/upload', {method:'POST', body:fd});
+    show('rosterMsg', '<p class="ok">CSV processed.</p>');
+    show('flowOut', renderRoster('Edmonds-Karp max-flow', res.maxflow));
+    show('greedyOut', renderRoster('Greedy baseline', res.greedy));
+  } catch (e) { fail('rosterMsg', e); }
+}
+
+async function runStats() {
+  if (!data) return fail('statsOut', new Error('Load sample data first'));
+  try {
+    const r = await post('/api/stats', {patients:data.patients, percentile:+document.getElementById('pct').value,
+      topK:+document.getElementById('topk').value});
+    show('statsOut', `<p>${r.patientCount} patients. Mean wait ${r.meanWaitMinutes.toFixed(1)} min,
+      median ${r.medianWaitMinutes.toFixed(1)} min, P${r.percentile} ${r.percentileWaitMinutes.toFixed(1)} min.<br>
+      <small>${esc(r.method)}</small></p>
+      <table><tr><th>Top-risk patient</th><th>Risk</th><th>Wait (min)</th></tr>` +
+      r.topRisk.map(p => `<tr><td>${esc(p.id)}</td><td>${p.riskScore}</td><td>${p.waitMinutes}</td></tr>`).join('') + '</table>');
+  } catch (e) { fail('statsOut', e); }
+}
+
+async function runAdmissions() {
+  if (!data) return fail('admOut', new Error('Load sample data first'));
+  try {
+    const r = await post('/api/admissions/check', {existingIds:data.existingIds, incomingIds:data.incomingIds,
+      falsePositiveRate:+document.getElementById('fpr').value});
+    show('admOut', `<p>${r.incomingCount} incoming vs ${r.existingCount} registered.
+      Bloom hits (possibly present): ${r.bloomHits}. Confirmed duplicates (exact check): <b>${r.confirmedDuplicates}</b>.
+      Bloom false positives caught: ${r.bloomFalsePositives}.<br>
+      <small>Filter: ${r.filterBits} bits, ${r.hashFunctions} hash functions, target FPR ${r.configuredFalsePositiveRate}</small></p>`);
+  } catch (e) { fail('admOut', e); }
+}
+
+async function runBench() {
+  show('benchOut', '<p>Running...</p>');
+  try {
+    const rows = await api('/api/benchmark');
+    const max = {};
+    rows.forEach(r => max[r.experiment] = Math.max(max[r.experiment] || 0, r.algorithmMs, r.baselineMs));
+    show('benchOut', '<table><tr><th>Experiment</th><th>n</th><th>Algorithm (ms)</th><th>Baseline (ms)</th><th>Outputs OK</th><th>Note</th></tr>' +
+      rows.map(r => `<tr><td>${esc(r.experiment)}</td><td>${r.n}</td>
+        <td>${r.algorithmMs.toFixed(2)}<div class="bar" style="width:${100*r.algorithmMs/max[r.experiment]}%"></div></td>
+        <td>${r.baselineMs.toFixed(2)} (${esc(r.baselineName)})<div class="bar base" style="width:${100*r.baselineMs/max[r.experiment]}%"></div></td>
+        <td>${r.outputsMatch ? '<span class="ok">yes</span>' : '<span class="err">NO</span>'}</td><td><small>${esc(r.note)}</small></td></tr>`).join('') + '</table>');
+  } catch (e) { fail('benchOut', e); }
+}
+</script>
+</body>
+</html>
