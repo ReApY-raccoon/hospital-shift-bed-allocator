@@ -21,8 +21,14 @@ mvn spring-boot:run       # starts on http://localhost:8080
 ```
 Open `http://localhost:8080` for the UI: load sample data, run the roster, statistics and admission checks, and run the benchmarks.
 
+If port 8080 is already in use, run on another port, for example:
+```bash
+mvn spring-boot:run "-Dspring-boot.run.arguments=--server.port=8081"
+```
+
 ## Sample data
 - `sample-data/nurses.csv`, `sample-data/shifts.csv`: a tiny hand-made roster. Upload both through the UI ("Run from CSV").
+- `sample-data/nurses_demo.csv`, `sample-data/shifts_demo.csv`: a two-nurse, two-shift case where greedy fills 1 of 2 slots and max-flow fills 2 of 2. Upload both through the UI to see the difference.
 - `GET /api/sample?nurses=30&seed=42` generates seeded synthetic data (nurses, shifts, patients, admission IDs). Same seed gives the same data.
 
 CSV formats:
@@ -86,6 +92,37 @@ src/main/resources/static/index.html   frontend (plain JS, calls the Java API)
 src/test/java/...                      JUnit tests
 sample-data/                           small CSV inputs
 ```
+
+## Screenshots
+Taken from the running application (port 8081 on the demo machine).
+
+**Tests: 55 passing**
+
+![tests](screenshots/tests.png)
+
+**Roster: max-flow fills 2 of 2 slots, greedy fills 1 of 2 (demo CSVs)**
+
+![roster demo](screenshots/roster-demo.png)
+
+**Roster on the generated sample data (min-cut shown)**
+
+![roster sample](screenshots/roster-sample.png)
+
+**Wait-time statistics (randomized Quickselect)**
+
+![statistics](screenshots/statistics.png)
+
+**Admission screening (Bloom filter + exact confirmation)**
+
+![admissions](screenshots/admissions.png)
+
+**Benchmarks: each algorithm against its baseline**
+
+![benchmarks](screenshots/benchmarks.png)
+
+**Error handling: invalid input gives a clear message**
+
+![error handling](screenshots/error-handling.png)
 
 ## Team
 Atharva Mondkar and Atharva Phale. Add each person's contribution to the report and keep commits attributed to each author.
